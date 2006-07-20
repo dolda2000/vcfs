@@ -22,7 +22,7 @@ static ssize_t cacheget(struct store *st, struct addr *a, void *buf, size_t len)
 {
     int he, i;
 
-    he = a->hash[0] + ((a->hash[1] & 0x0f) << 8);
+    he = a->hash[0] | ((a->hash[1] & 0x0f) << 8);
     for(i = 0; i < 4; i++) {
 	if(!addrcmp(&st->cache[he * 4 + i].a, a))
 	    break;
@@ -39,7 +39,7 @@ static void cacheput(struct store *st, struct addr *a, const void *data, ssize_t
     int he, i;
     struct storecache tmp;
     
-    he = a->hash[0] + ((a->hash[1] & 0x0f) << 8);
+    he = a->hash[0] | ((a->hash[1] & 0x0f) << 8);
     for(i = 0; i < 4; i++) {
 	if(!addrcmp(&st->cache[he * 4 + i].a, a))
 	    break;
