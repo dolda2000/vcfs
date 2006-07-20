@@ -207,66 +207,6 @@ void btsortops(struct btop *ops, int numops)
     qsort(ops, numops, sizeof(*ops), (int (*)(const void *, const void *))opcmp);
 }
 
-/*
-Obsoleted
-
-int btappend(struct store *st, struct btnode *tree, void *buf, size_t len)
-{
-    int d, f;
-    struct btnode indir[BT_INDSZ];
-    struct addr na;
-    block_t c;
-    ssize_t sz;
-    
-    d = tree->d & 0x7f;
-    f = tree->d & 0x80;
-    
-    if(f) {
-	if(storeput(st, buf, len, &na))
-	    return(-1);
-	indir[0] = *tree;
-	indir[1].d = 0x80;
-	indir[1].a = na;
-	if(storeput(st, indir, 2 * sizeof(*indir), &na))
-	    return(-1);
-	tree->d = d + 1;
-	tree->a = na;
-	return(0);
-    }
-    
-    if(d == 0) {
-	if(storeput(st, buf, len, &na))
-	    return(-1);
-	tree->d |= 0x80;
-	tree->a = na;
-	return(0);
-    }
-    
-    if((sz = storeget(st, indir, BT_INDBSZ, &tree->a)) < 0)
-	return(-1);
-    c = sz / sizeof(struct btnode);
-    if(!(indir[c - 1].d & 0x80) || ((indir[c - 1].d & 0x7f) < (d - 1))) {
-	if(btappend(st, &indir[c - 1], buf, len))
-	    return(-1);
-	if(storeput(st, indir, sz, &na))
-	    return(-1);
-	tree->a = na;
-	if((indir[c - 1].d & 0x80) && ((indir[c - 1].d & 0x7f) == (d - 1)))
-	    tree->d |= 0x80;
-	return(0);
-    }
-    
-    if(storeput(st, buf, len, &na))
-	return(-1);
-    indir[c].d = 0x80;
-    indir[c].a = na;
-    if(storeput(st, indir, sz + sizeof(struct btnode), &na))
-	return(-1);
-    tree->a = na;
-    return(0);
-}
-*/
-
 block_t btcount(struct store *st, struct btnode *tree)
 {
     int d, f;
