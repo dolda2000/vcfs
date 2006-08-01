@@ -408,11 +408,26 @@ static vc_rev_t commit(struct vcfsdata *fsd, struct btnode inotab)
 
 static int deldentry(struct vcfsdata *fsd, struct inode *ino, int di)
 {
+    struct btop ops[2];
+    struct dentry dent;
+    ssize_t sz;
+    
     if((di < 0) || (di >= ino->size)) {
 	errno = ERANGE;
 	return(-1);
     }
-    
+    if(di == ino->size - 1) {
+	if(btput(fsd->st, &ino->data, ino->size - 1, NULL, 0))
+	    return(-1);
+    } else {
+	if((sz = btget(fsd->st, &ino->data, ino->size - 1, &dent, sizeof(dent))) < 0)
+	    return(-1);
+	btmkop(ops + 0, di, &dent, sz);
+	btmkop(ops + 1, ino->size - 1, NULL, 0);
+	if(btputmany(fsd->st, &ino->data, ops, 2))
+	    return(-1);
+    }
+    return(0);
 }
 
 static int setdentry(struct vcfsdata *fsd, struct inode *ino, int di, const char *name, vc_ino_t target)
@@ -512,12 +527,13 @@ static void fusemkdir(fuse_req_t req, fuse_ino_t parent, const char *name, mode_
     fuse_reply_entry(req, &e);
 }
 
-static void fusermdir(fuse_req_t req, fuse_ino_t parent, const char *name)
+static void fuseunlink(fuse_req_t req, fuse_ino_t parent, const char *name)
 {
     struct vcfsdata *fsd;
     struct inoc *inoc;
     struct inode file;
     int di;
+    struct btnode inotab;
     
     fsd = fuse_req_userdata(req);
     if((inoc = getinocbf(fsd, parent)) == NULL) {
@@ -540,6 +556,17 @@ static void fusermdir(fuse_req_t req, fuse_ino_t parent, const char *name)
 	fuse_reply_err(req, ENOENT);
 	return;
     }
+    inotab = fsd->inotab;
+    if(deldentry(fsd, &file, di)) {
+	fuse_reply_err(req, errno);
+	return;
+    }
+    if(btput(fsd->st, &inotab, inoc->inode, &file, sizeof(file))) {
+	fuse_reply_err(req, errno);
+	return;
+    }
+    commit(fsd, inotab);
+    fuse_reply_err(req, 0);
 }
 
 static struct fuse_lowlevel_ops fuseops = {
@@ -548,7 +575,8 @@ static struct fuse_lowlevel_ops fuseops = {
     .getattr = fusegetattr,
     .readdir = fusereaddir,
     .mkdir = fusemkdir,
-    .rmdir = fusermdir,
+    .rmdir = fuseunlink,
+    .unlink = fuseunlink,
 };
 
 int main(int argc, char **argv)
