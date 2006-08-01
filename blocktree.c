@@ -6,6 +6,7 @@
 #include "blocktree.h"
 
 #define min(a, b) (((b) < (a))?(b):(a))
+#define ISDELOP(op) (((op).buf == NULL) && ((op).fillfn == NULL))
 
 ssize_t btget(struct store *st, struct btnode *tree, block_t bl, void *buf, size_t len)
 {
@@ -52,6 +53,10 @@ static int btputleaf(struct store *st, struct btnode *leaf, struct btop *op, blo
     struct addr na;
     int ret;
     
+    if(ISDELOP(*op)) {
+	leaf->d = 0;
+	return(0);
+    }
     buf = NULL;
     if(op->buf == NULL) {
 	buf = op->buf = malloc(op->len);
@@ -97,6 +102,10 @@ static int btputmany2(struct store *st, struct btnode *tree, struct btop *ops, i
     hasid = 0;
     
     for(i = 0; i < numops; ) {
+	if(ops[i].blk < bloff) {
+	    errno = ERANGE;
+	    return(-1);
+	}
 	bl = ops[i].blk - bloff;
     
 	if((d == 0) && (bl == 0)) {
@@ -162,8 +171,15 @@ static int btputmany2(struct store *st, struct btnode *tree, struct btop *ops, i
 	i += subops;
 	
 	if((sel == BT_INDSZ - 1) && (indir[sel].d == ((d - 1) | 0x80))) {
+	    /* Filled up */
 	    tree->d |= 0x80;
 	    f = 1;
+	} else if(indir[sel].d == 0) {
+	    /* Erased */
+	    if(--c == 1) {
+		tree->d = indir[0].d;
+		tree->a = indir[0].a;
+	    }
 	}
     }
     if(hasid) {
@@ -199,7 +215,14 @@ void btmkop(struct btop *op, block_t bl, void *buf, size_t len)
 
 static int opcmp(const struct btop **op1, const struct btop **op2)
 {
-    return((*op1)->blk - (*op2)->blk);
+    if(ISDELOP(**op1) && ISDELOP(**op2))
+	return((*op2)->blk - (*op1)->blk);
+    else if(!ISDELOP(**op1) && ISDELOP(**op2))
+	return(-1);
+    else if(ISDELOP(**op1) && !ISDELOP(**op2))
+	return(1);
+    else
+	return((*op1)->blk - (*op2)->blk);
 }
 
 void btsortops(struct btop *ops, int numops)
