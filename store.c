@@ -48,13 +48,13 @@ static void cacheput(struct store *st, struct addr *a, const void *data, ssize_t
 	return;
     if(i < 4) {
 	tmp = st->cache[he * 4 + i];
-	memmove(&st->cache[he * 4 + 1], &st->cache[he * 4], i);
+	memmove(&st->cache[he * 4 + 1], &st->cache[he * 4], i * sizeof(struct storecache));
 	st->cache[he * 4] = tmp;
 	return;
     }
     if(st->cache[he * 4 + 3].data != NULL)
 	free(st->cache[he * 4 + 3].data);
-    memmove(&st->cache[he * 4 + 1], &st->cache[he * 4], 3);
+    memmove(&st->cache[he * 4 + 1], &st->cache[he * 4], 3 * sizeof(struct storecache));
     st->cache[he * 4].a = *a;
     if(len > 0)
 	st->cache[he * 4].data = memcpy(malloc(len), data, len);
