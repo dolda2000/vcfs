@@ -82,17 +82,17 @@ ssize_t storeget(struct store *st, void *buf, size_t len, struct addr *at)
     struct addr at2;
     
     at2 = *at;
-    sz = cacheget(st, at2, buf, len);
+    sz = cacheget(st, &at2, buf, len);
     if(sz != -2) {
 	if(sz == -1)
 	    errno = ENOENT;
 	return(sz);
     }
-    sz = st->ops->get(st, buf, len, at2);
+    sz = st->ops->get(st, buf, len, &at2);
     if((sz < 0) && (errno == ENOENT))
-	cacheput(st, at2, NULL, -1);
+	cacheput(st, &at2, NULL, -1);
     else if(sz >= 0)
-	cacheput(st, at2, buf, sz);
+	cacheput(st, &at2, buf, sz);
     return(sz);
 }
 
