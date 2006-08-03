@@ -307,6 +307,7 @@ static void fusegetattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *f
 	return;
     }
     fillstat(&sb, &file);
+    sb.st_ino = ino;
     fuse_reply_attr(req, &sb, 0);
 }
 
@@ -338,6 +339,7 @@ static void fuselookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     memset(&e, 0, sizeof(e));
     e.ino = cacheinode(fsd, target, inoc->inotab);
     fillstat(&e.attr, &file);
+    e.attr.st_ino = e.ino;
     fuse_reply_entry(req, &e);
 }
 
@@ -525,6 +527,7 @@ static void fusemkdir(fuse_req_t req, fuse_ino_t parent, const char *name, mode_
     memset(&e, 0, sizeof(e));
     e.ino = cacheinode(fsd, fsd->nextino++, nilnode);
     fillstat(&e.attr, &new);
+    e.attr.st_ino = e.ino;
     fuse_reply_entry(req, &e);
 }
 
