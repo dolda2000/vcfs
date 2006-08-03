@@ -226,7 +226,7 @@ static struct vcfsdata *initvcfs(char *dir)
     }
     fsd->inocser = 1;
     cacheinode(fsd, 0, nilnode);
-    if((fsd->nextino = btcount(fsd->st, &fsd->inotab)) < 0) {
+    if((fsd->nextino = btcount(fsd->st, &fsd->inotab, INOBLSIZE)) < 0) {
 	flog(LOG_ERR, "could not count inodes: %s");
 	close(fsd->revfd);
 	releasestore(fsd->st);
@@ -243,7 +243,7 @@ static vc_ino_t dirlookup(struct vcfsdata *fsd, struct btnode *dirdata, const ch
     ssize_t sz;
     
     for(i = 0; ; i++) {
-	if((sz = btget(fsd->st, dirdata, i, &dent, sizeof(dent))) < 0) {
+	if((sz = btget(fsd->st, dirdata, i, &dent, sizeof(dent), DIRBLSIZE)) < 0) {
 	    if(errno == ERANGE)
 		errno = ENOENT;
 	    return(-1);
@@ -279,7 +279,7 @@ static int getinode(struct vcfsdata *fsd, struct btnode inotab, vc_ino_t ino, st
     
     if(inotab.d == 0)
 	inotab = fsd->inotab;
-    if((sz = btget(fsd->st, &inotab, ino, buf, sizeof(*buf))) < 0)
+    if((sz = btget(fsd->st, &inotab, ino, buf, sizeof(*buf), INOBLSIZE)) < 0)
 	return(-1);
     if(sz != sizeof(*buf)) {
 	flog(LOG_ERR, "illegal size for inode %i", ino);
@@ -364,7 +364,7 @@ static void fusereaddir(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, 
     buf = NULL;
     while(bsz < size) {
 	memset(&dent, 0, sizeof(dent));
-	if((sz = btget(fsd->st, &file.data, off++, &dent, sizeof(dent))) < 0) {
+	if((sz = btget(fsd->st, &file.data, off++, &dent, sizeof(dent), DIRBLSIZE)) < 0) {
 	    if(errno == ERANGE) {
 		if(buf != NULL)
 		    break;
@@ -417,16 +417,17 @@ static int deldentry(struct vcfsdata *fsd, struct inode *ino, int di)
 	return(-1);
     }
     if(di == ino->size - 1) {
-	if(btput(fsd->st, &ino->data, ino->size - 1, NULL, 0))
+	if(btput(fsd->st, &ino->data, ino->size - 1, NULL, 0, DIRBLSIZE))
 	    return(-1);
     } else {
-	if((sz = btget(fsd->st, &ino->data, ino->size - 1, &dent, sizeof(dent))) < 0)
+	if((sz = btget(fsd->st, &ino->data, ino->size - 1, &dent, sizeof(dent), DIRBLSIZE)) < 0)
 	    return(-1);
 	btmkop(ops + 0, di, &dent, sz);
 	btmkop(ops + 1, ino->size - 1, NULL, 0);
-	if(btputmany(fsd->st, &ino->data, ops, 2))
+	if(btputmany(fsd->st, &ino->data, ops, 2, DIRBLSIZE))
 	    return(-1);
     }
+    ino->size--;
     return(0);
 }
 
@@ -444,12 +445,12 @@ static int setdentry(struct vcfsdata *fsd, struct inode *ino, int di, const char
     dent.inode = target;
     sz = sizeof(dent) - sizeof(dent.name) + strlen(name) + 1;
     if((di == -1) || (di == ino->size)) {
-	if(btput(fsd->st, &ino->data, ino->size, &dent, sz))
+	if(btput(fsd->st, &ino->data, ino->size, &dent, sz, DIRBLSIZE))
 	    return(-1);
 	ino->size++;
 	return(0);
     }
-    return(btput(fsd->st, &ino->data, di, &dent, sz));
+    return(btput(fsd->st, &ino->data, di, &dent, sz, DIRBLSIZE));
 }
 
 static void fusemkdir(fuse_req_t req, fuse_ino_t parent, const char *name, mode_t mode)
@@ -505,7 +506,7 @@ static void fusemkdir(fuse_req_t req, fuse_ino_t parent, const char *name, mode_
     file.links++;
     btmkop(ops + 0, inoc->inode, &file, sizeof(file));
     btmkop(ops + 1, fsd->nextino, &new, sizeof(new));
-    if(btputmany(fsd->st, &inotab, ops, 2)) {
+    if(btputmany(fsd->st, &inotab, ops, 2, INOBLSIZE)) {
 	fuse_reply_err(req, errno);
 	return;
     }
@@ -561,7 +562,7 @@ static void fuseunlink(fuse_req_t req, fuse_ino_t parent, const char *name)
 	fuse_reply_err(req, errno);
 	return;
     }
-    if(btput(fsd->st, &inotab, inoc->inode, &file, sizeof(file))) {
+    if(btput(fsd->st, &inotab, inoc->inode, &file, sizeof(file), INOBLSIZE)) {
 	fuse_reply_err(req, errno);
 	return;
     }

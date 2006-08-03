@@ -8,11 +8,11 @@
 #define min(a, b) (((b) < (a))?(b):(a))
 #define ISDELOP(op) (((op).buf == NULL) && ((op).fillfn == NULL))
 
-ssize_t btget(struct store *st, struct btnode *tree, block_t bl, void *buf, size_t len)
+ssize_t btget(struct store *st, struct btnode *tree, block_t bl, void *buf, size_t len, size_t blsize)
 {
     int d;
     block_t c, sel;
-    struct btnode indir[BT_INDSZ];
+    struct btnode indir[1 << blsize];
     ssize_t sz;
     
     if(tree->d == 0) {
@@ -24,7 +24,7 @@ ssize_t btget(struct store *st, struct btnode *tree, block_t bl, void *buf, size
 	/* This check should really only be necessary on the first
 	 * iteration, but I felt it was easier to put it in the
 	 * loop. */
-	if((bl >> (d * BT_INDBITS)) > 0) {
+	if((bl >> (d * blsize)) > 0) {
 	    errno = ERANGE;
 	    return(-1);
 	}
@@ -33,16 +33,16 @@ ssize_t btget(struct store *st, struct btnode *tree, block_t bl, void *buf, size
 	    return(storeget(st, buf, len, &tree->a));
 	
 	/* Luckily, this is tail recursive */
-	if((sz = storeget(st, indir, BT_INDBSZ, &tree->a)) < 0)
+	if((sz = storeget(st, indir, sizeof(indir), &tree->a)) < 0)
 	    return(-1);
 	c = sz / sizeof(struct btnode);
-	sel = bl >> ((d - 1) * BT_INDBITS);
+	sel = bl >> ((d - 1) * blsize);
 	if(sel >= c) {
 	    errno = ERANGE;
 	    return(-1);
 	}
 	tree = &indir[sel];
-	bl &= (1LL << ((d - 1) * BT_INDBITS)) - 1;
+	bl &= (1LL << ((d - 1) * blsize)) - 1;
     }
     return(0);
 }
@@ -88,12 +88,12 @@ static int countops(struct btop *ops, int numops, block_t bloff, block_t maxbl)
  * blputmany() in many ways makes the code uglier, but it saves a
  * *lot* of space, since it doesn't need to store intermediary blocks.
  */
-static int btputmany2(struct store *st, struct btnode *tree, struct btop *ops, int numops, block_t bloff)
+static int btputmany2(struct store *st, struct btnode *tree, struct btop *ops, int numops, size_t blsize, block_t bloff)
 {
     int i, subops, d, f, hasid;
     block_t c, sel, bl, nextsz;
     struct addr na;
-    struct btnode indir[BT_INDSZ];
+    struct btnode indir[1 << blsize];
     ssize_t sz;
     
     d = tree->d & 0x7f;
@@ -115,7 +115,7 @@ static int btputmany2(struct store *st, struct btnode *tree, struct btop *ops, i
 	    continue;
 	}
     
-	if(f && (bl == (1LL << (d * BT_INDBITS)))) {
+	if(f && (bl == (1LL << (d * blsize)))) {
 	    /* New level of indirection */
 	    if(hasid) {
 		if(storeput(st, indir, c * sizeof(struct btnode), &na))
@@ -135,21 +135,21 @@ static int btputmany2(struct store *st, struct btnode *tree, struct btop *ops, i
 	    }
 	    /* Assume that numops == largest block number + 1 -- gaps
 	     * will be detected as errors later */
-	    for(bl = numops - 1; bl > 0; d++, bl <<= BT_INDBITS);
+	    for(bl = numops - 1; bl > 0; d++, bl <<= blsize);
 	    tree->d = d;
 	    c = 0;
 	    hasid = 1;
 	} else {
 	    /* Get indirect block */
 	    if(!hasid) {
-		if((sz = storeget(st, indir, BT_INDBSZ, &tree->a)) < 0)
+		if((sz = storeget(st, indir, sizeof(indir), &tree->a)) < 0)
 		    return(-1);
 		c = sz / sizeof(struct btnode);
 		hasid = 1;
 	    }
 	}
 
-	sel = bl >> ((d - 1) * BT_INDBITS);
+	sel = bl >> ((d - 1) * blsize);
 	if(sel > c) {
 	    errno = ERANGE;
 	    return(-1);
@@ -164,13 +164,13 @@ static int btputmany2(struct store *st, struct btnode *tree, struct btop *ops, i
 	    indir[c].d = 0;
 	    c++;
 	}
-	nextsz = 1LL << ((d - 1) * BT_INDBITS);
+	nextsz = 1LL << ((d - 1) * blsize);
 	subops = countops(ops + i, numops - i, bloff + (sel * nextsz), nextsz);
-	if(btputmany2(st, &indir[sel], ops + i, subops, bloff + (sel * nextsz)))
+	if(btputmany2(st, &indir[sel], ops + i, subops, blsize, bloff + (sel * nextsz)))
 	    return(-1);
 	i += subops;
 	
-	if((sel == BT_INDSZ - 1) && (indir[sel].d == ((d - 1) | 0x80))) {
+	if((sel == (1 << blsize) - 1) && (indir[sel].d == ((d - 1) | 0x80))) {
 	    /* Filled up */
 	    tree->d |= 0x80;
 	    f = 1;
@@ -190,19 +190,20 @@ static int btputmany2(struct store *st, struct btnode *tree, struct btop *ops, i
     return(0);
 }
 
-int btputmany(struct store *st, struct btnode *tree, struct btop *ops, int numops)
+int btputmany(struct store *st, struct btnode *tree, struct btop *ops, int numops, size_t blsize)
 {
-    return(btputmany2(st, tree, ops, numops, 0));
+    return(btputmany2(st, tree, ops, numops, blsize, 0));
 }
 
-int btput(struct store *st, struct btnode *tree, block_t bl, void *buf, size_t len)
+int btput(struct store *st, struct btnode *tree, block_t bl, void *buf, size_t len, size_t blsize)
 {
-    struct btop ops[1];
+    struct btop ops;
     
-    ops[0].blk = bl;
-    ops[0].buf = buf;
-    ops[0].len = len;
-    return(btputmany(st, tree, ops, 1));
+    memset(&ops, 0, sizeof(ops));
+    ops.blk = bl;
+    ops.buf = buf;
+    ops.len = len;
+    return(btputmany(st, tree, &ops, 1, blsize));
 }
 
 void btmkop(struct btop *op, block_t bl, void *buf, size_t len)
@@ -230,10 +231,10 @@ void btsortops(struct btop *ops, int numops)
     qsort(ops, numops, sizeof(*ops), (int (*)(const void *, const void *))opcmp);
 }
 
-block_t btcount(struct store *st, struct btnode *tree)
+block_t btcount(struct store *st, struct btnode *tree, size_t blsize)
 {
     int d, f;
-    struct btnode indir[BT_INDSZ];
+    struct btnode indir[1 << blsize];
     block_t c, ret;
     ssize_t sz;
     
@@ -241,21 +242,21 @@ block_t btcount(struct store *st, struct btnode *tree)
     f = tree->d & 0x80;
     
     if(f)
-	return(1LL << (d * BT_INDBITS));
+	return(1LL << (d * blsize));
     
     if(d == 0)
 	return(0);
     
     ret = 0;
     while(1) {
-	if((sz = storeget(st, indir, BT_INDBSZ, &tree->a)) < 0)
+	if((sz = storeget(st, indir, sizeof(indir), &tree->a)) < 0)
 	    return(-1);
 	c = sz / sizeof(struct btnode);
-	ret += (c - 1) * (1LL << ((d - 1) * BT_INDBITS));
+	ret += (c - 1) * (1LL << ((d - 1) * blsize));
 	d = indir[c - 1].d & 0x7f;
 	f = indir[c - 1].d & 0x80;
 	if(f)
-	    return(ret + (1LL << (d * BT_INDBITS)));
+	    return(ret + (1LL << (d * blsize)));
 	tree = &indir[c - 1];
     }
 }

@@ -6,6 +6,9 @@
 
 #include "blocktree.h"
 
+#define DIRBLSIZE 4
+#define INOBLSIZE 4
+
 typedef loff_t vc_ino_t;
 typedef loff_t vc_rev_t;
 

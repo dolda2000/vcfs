@@ -45,19 +45,19 @@ int main(int argc, char **argv)
     root.data.d = 0;
     root.xattr.d = 0;
     strcpy(dots.name, ".");
-    if(btput(st, &root.data, 0, &dots, sizeof(dots) - sizeof(dots.name) + 2)) {
+    if(btput(st, &root.data, 0, &dots, sizeof(dots) - sizeof(dots.name) + 2, DIRBLSIZE)) {
 	fprintf(stderr, "mkfs.vc: could not create root directory entries: %s\n", strerror(errno));
 	exit(1);
     }
     strcpy(dots.name, "..");
-    if(btput(st, &root.data, 1, &dots, sizeof(dots) - sizeof(dots.name) + 3)) {
+    if(btput(st, &root.data, 1, &dots, sizeof(dots) - sizeof(dots.name) + 3, DIRBLSIZE)) {
 	fprintf(stderr, "mkfs.vc: could not create root directory entries: %s\n", strerror(errno));
 	exit(1);
     }
     
     frev.ct = now;
     frev.root.d = 0;
-    if(btput(st, &frev.root, 0, &root, sizeof(root))) {
+    if(btput(st, &frev.root, 0, &root, sizeof(root), INOBLSIZE)) {
 	fprintf(stderr, "mkfs.vc: could not store root directory inode: %s\n", strerror(errno));
 	exit(1);
     }
