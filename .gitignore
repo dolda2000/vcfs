@@ -1,0 +1,6 @@
+*.o
+/mkfs.vc
+/mkstore
+/storeget
+/storeput
+/vcfs
